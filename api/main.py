@@ -7,7 +7,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import articles, search, stats, trigger
+from api.routes import articles, search, stats, trigger, telegram as telegram_routes
 from core.config import get_settings
 
 
@@ -86,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix="/api", tags=["Search"])
     app.include_router(stats.router, prefix="/api", tags=["Stats"])
     app.include_router(trigger.router, prefix="/api", tags=["Pipeline"])
+    app.include_router(telegram_routes.router, prefix="/api/telegram", tags=["Telegram"])
 
     @app.get("/api/health", tags=["Health"])
     async def health_check():

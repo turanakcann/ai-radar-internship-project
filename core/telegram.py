@@ -1,13 +1,14 @@
 """
-core/telegram.py — Telegram Bot API helper with MarkdownV2 escaping and retry logic.
+core/telegram.py — Telegram Bot API helper.
 
-Telegram MarkdownV2 requires escaping these 20 special characters:
-_ * [ ] ( ) ~ ` > # + - = | { } . !  \
+Uses HTML parse_mode instead of MarkdownV2.
+HTML only requires escaping <, >, & — done once via html.escape().
+This eliminates the 400 Bad Request errors caused by MarkdownV2's
+strict 20-character escape rules breaking on dynamic article text.
 """
 from __future__ import annotations
 
-import json
-import re
+import html
 from datetime import datetime
 
 import httpx
@@ -21,13 +22,10 @@ from tenacity import (
 from core.config import get_settings
 from core.schemas import DispatcherInput
 
-# All special chars that MUST be escaped in MarkdownV2
-_MDV2_SPECIAL = re.compile(r"([_*\[\]()~`>#\+\-=|{}.!\\])")
 
-
-def escape_markdownv2(text: str) -> str:
-    """Escape all Telegram MarkdownV2 special characters."""
-    return _MDV2_SPECIAL.sub(r"\\\1", text)
+def _h(text: str) -> str:
+    """Escape a string for safe inclusion in Telegram HTML messages."""
+    return html.escape(str(text), quote=False)
 
 
 def _score_emoji(score: float) -> str:
@@ -42,44 +40,46 @@ def _score_emoji(score: float) -> str:
 
 def format_telegram_message(article: DispatcherInput) -> str:
     """
-    Build a Telegram MarkdownV2 formatted message for an article.
+    Build a Telegram HTML-formatted message for a high-relevance article.
 
     Template:
     ━━━━━━━━━━━━━━━━━━━━━━━━
-    🔥 **[SCORE]** | Category
-    📋 Title
+    🔥 Skor: 8.5 | Category
     ━━━━━━━━━━━━━━━━━━━━━━━━
+    📋 <b>Title</b>  📅 16 Aug 2026
+
     • Bullet 1
     • Bullet 2
     • Bullet 3
-    🏷 Tags
-    🔗 Read More
+
+    🏷 #tag1 · #tag2
+    🔗 <a href="url">Makaleyi Oku</a>
     """
+    sep = "━" * 28
     emoji = _score_emoji(article.relevance_score)
     score_str = f"{article.relevance_score:.1f}"
-    sep = escape_markdownv2("━" * 28)
 
-    title = escape_markdownv2(article.title)
-    category = escape_markdownv2(article.primary_category)
-    tags_str = escape_markdownv2(" · ".join(f"#{t}" for t in article.tags[:5]))
-    url = escape_markdownv2(article.url)
+    title = _h(article.title)
+    category = _h(article.primary_category)
+    tags_str = _h(" · ".join(f"#{t}" for t in article.tags[:5]))
+    url = article.url  # URLs are not escaped — Telegram validates them separately
 
-    bullets = "\n".join(
-        f"• {escape_markdownv2(b)}" for b in article.summary_bullets
+    bullets_html = "\n".join(
+        f"• {_h(b)}" for b in article.summary_bullets
     )
 
-    published = ""
+    published_str = ""
     if article.published_at:
-        published = f"\n📅 {escape_markdownv2(article.published_at.strftime('%d %b %Y'))}"
+        published_str = f"  📅 {_h(article.published_at.strftime('%d %b %Y'))}"
 
     message = (
         f"{sep}\n"
-        f"{emoji} *Skor: {escape_markdownv2(score_str)}* \\| {category}\n"
+        f"{emoji} <b>Skor: {_h(score_str)}</b> | {category}\n"
         f"{sep}\n\n"
-        f"📋 *{title}*{published}\n\n"
-        f"{bullets}\n\n"
+        f"📋 <b>{title}</b>{published_str}\n\n"
+        f"{bullets_html}\n\n"
         f"🏷 {tags_str}\n"
-        f"🔗 [Makaleyi Oku]({url})"
+        f'🔗 <a href="{url}">Makaleyi Oku</a>'
     )
     return message
 
@@ -95,10 +95,10 @@ async def send_telegram_message(
     chat_id: str | None = None,
 ) -> dict:
     """
-    Send a Telegram MarkdownV2 message via Bot API.
+    Send an HTML-formatted message via the Telegram Bot API.
 
-    Retries up to 3 times with exponential backoff on HTTP errors.
-    Returns the full Telegram API response dict.
+    Retries up to 3 times with exponential backoff on transient HTTP errors.
+    Returns the full Telegram API response dict on success.
     """
     settings = get_settings()
     token = settings.telegram_bot_token
@@ -109,9 +109,9 @@ async def send_telegram_message(
             "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env"
         )
 
-    # Guard against placeholder tokens from the example .env file.
-    # These tokens produce a Telegram 404 Not Found and waste retry budget.
-    _PLACEHOLDER_MARKERS = ("123456789", "AABBcc", "AABBccDDeeFF")
+    # Guard against placeholder tokens — they produce a Telegram 404 and
+    # waste the retry budget without any chance of succeeding.
+    _PLACEHOLDER_MARKERS = ("123456789", "AABBcc", "AABBccDDeeFF", "<YOUR_")
     if any(marker in token for marker in _PLACEHOLDER_MARKERS):
         import logging as _logging
         _logging.getLogger(__name__).warning(
@@ -127,11 +127,13 @@ async def send_telegram_message(
     payload = {
         "chat_id": target_chat,
         "text": text,
-        "parse_mode": "MarkdownV2",
+        "parse_mode": "HTML",
         "disable_web_page_preview": False,
+        "disable_notification": False,
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         return response.json()
+
