@@ -1,5 +1,53 @@
-﻿.env
-/venv
-*__pycache__
-/chroma_db
+﻿# ─────────────────────────────────────────────────────────────────────────────
+# Davision AI Tech & Trend Radar — .gitignore
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Environment Variables ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Python & Backend ──────────────────────────────────────────────────────────
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# ── Data & Vector Store ───────────────────────────────────────────────────────
+/chroma_db/
+/data/chromadb/
+
+# ── Next.js & Frontend ────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+node_modules/
+.next/
+out/
+
+# ── Tools & OS ────────────────────────────────────────────────────────────────
 ngrok.exe
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# ── AI Agent Config, Memory & Planning Files ─────────────────────────────────
+# (IMPORTANT: only .agents/ hidden dir, NOT the agents/ Python package)
+.agents/
+.cline/
+.roo/
+SKILL.md
+plan.md
+Plan.md
+agent.md
+architecture_overview.md
+skills-lock.json
